@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#111722" />
     <title>Philosopher Chat</title>
     <link rel="stylesheet" href="style.css" />
   </head>
@@ -11,13 +13,25 @@
     <div id="app" class="app">
       <aside id="sidebar" class="sidebar">
         <header class="sidebar-header">
-          <span class="app-title">Philosopher Chat</span>
+          <span class="app-title"
+            ><span class="app-mark" aria-hidden="true">🏛️</span>Philosopher
+            Chat</span
+          >
           <button
             id="new-thread-btn"
-            class="btn btn-primary btn-small"
-            title="New Chat"
+            class="btn btn-primary btn-small btn-pill new-thread-btn"
+            title="New conversation"
           >
-            + New
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path
+                d="M12 5v14M5 12h14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.4"
+                stroke-linecap="round"
+              />
+            </svg>
+            New
           </button>
         </header>
         <div id="thread-list" class="thread-list"></div>
@@ -25,19 +39,46 @@
 
       <main id="thread-pane" class="thread-pane">
         <div id="thread-empty" class="thread-empty">
-          <p>Pick a conversation, or start a new one.</p>
+          <span class="empty-emoji" aria-hidden="true">💬</span>
+          <h2>No conversation open</h2>
+          <p>Pick a conversation from the list, or start a new one.</p>
+          <button
+            class="btn btn-primary btn-pill"
+            data-action="new-thread"
+            type="button"
+          >
+            Start a conversation
+          </button>
         </div>
 
         <div id="thread-view" class="thread-view hidden">
           <header class="thread-header">
-            <button id="back-btn" class="btn btn-ghost back-btn" title="Back">
-              &larr;
+            <button
+              id="back-btn"
+              class="btn btn-ghost back-btn"
+              title="Back"
+              aria-label="Back to conversations"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M15 5l-7 7 7 7"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
             </button>
+            <div id="member-chips" class="member-stack"></div>
             <div class="thread-header-main">
               <h2 id="thread-name" class="thread-name"></h2>
-              <div id="member-chips" class="member-chips"></div>
+              <div id="thread-status" class="thread-status"></div>
             </div>
-            <button id="pause-btn" class="btn btn-ghost btn-small"></button>
+            <button
+              id="pause-btn"
+              class="btn btn-ghost btn-small btn-pill pause-btn"
+            ></button>
           </header>
           <div id="messages" class="messages"></div>
           <div
@@ -62,7 +103,12 @@
                 title="Send"
                 aria-label="Send"
               >
-                &#10148;
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M3.4 20.4l18.2-8.4L3.4 3.6l-.02 6.53L16 12 3.38 13.87z"
+                    fill="currentColor"
+                  />
+                </svg>
               </button>
             </form>
           </footer>
@@ -72,10 +118,19 @@
 
     <!-- Persona drawer -->
     <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
-    <aside id="persona-drawer" class="persona-drawer hidden">
+    <aside
+      id="persona-drawer"
+      class="persona-drawer hidden"
+      aria-label="Philosopher details"
+    >
       <header class="drawer-header">
         <div id="drawer-identity" class="drawer-identity"></div>
-        <button id="drawer-close" class="btn btn-ghost" title="Close">
+        <button
+          id="drawer-close"
+          class="btn btn-ghost"
+          title="Close"
+          aria-label="Close"
+        >
           &times;
         </button>
       </header>
@@ -84,10 +139,20 @@
 
     <!-- New thread modal -->
     <div id="modal-backdrop" class="modal-backdrop hidden">
-      <div class="modal">
+      <div
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="New conversation"
+      >
         <header class="modal-header">
           <h2>New conversation</h2>
-          <button id="modal-close" class="btn btn-ghost" title="Close">
+          <button
+            id="modal-close"
+            class="btn btn-ghost"
+            title="Close"
+            aria-label="Close"
+          >
             &times;
           </button>
         </header>
@@ -119,8 +184,8 @@
             </select>
           </label>
           <p id="new-thread-error" class="form-error hidden"></p>
-          <button type="submit" class="btn btn-primary btn-block">
-            Create
+          <button type="submit" class="btn btn-primary btn-block btn-pill">
+            Create conversation
           </button>
         </form>
       </div>

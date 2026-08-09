@@ -25,9 +25,14 @@
     openToken: 0, // guards against out-of-order thread loads
     drawerAgentId: null, // guards against out-of-order persona loads
     reconnectTimer: null,
+    seenSeqs: {}, // message seqs already painted, so only arrivals animate
+    memberSummary: "", // header subtitle shown when nobody is typing
   };
 
   var MAX_MEMBERS = 6;
+  var HEADER_AVATARS = 3; // before the "+N" chip
+  var GROUP_GAP_MS = 5 * 60 * 1000; // a pause this long starts a new bubble run
+  var DAY_MS = 24 * 60 * 60 * 1000;
 
   // -- DOM shortcuts --
 
@@ -45,6 +50,7 @@
     threadView: $("thread-view"),
     backBtn: $("back-btn"),
     threadName: $("thread-name"),
+    threadStatus: $("thread-status"),
     memberChips: $("member-chips"),
     pauseBtn: $("pause-btn"),
     messages: $("messages"),
@@ -135,6 +141,49 @@
     if (!atMs) return "";
     var d = new Date(atMs);
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  // Midnight of the day `atMs` falls on, in local time — the unit both the
+  // day dividers and the sidebar timestamps compare on.
+  function startOfDay(atMs) {
+    var d = new Date(atMs);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+
+  function sameDay(a, b) {
+    if (!a || !b) return false;
+    return startOfDay(a) === startOfDay(b);
+  }
+
+  // Days between `atMs` and today, so "yesterday" survives month boundaries.
+  function daysAgo(atMs) {
+    return Math.round((startOfDay(Date.now()) - startOfDay(atMs)) / DAY_MS);
+  }
+
+  function dayLabel(atMs) {
+    if (!atMs) return "";
+    var delta = daysAgo(atMs);
+    if (delta <= 0) return "Today";
+    if (delta === 1) return "Yesterday";
+    var d = new Date(atMs);
+    if (delta < 7) return d.toLocaleDateString([], { weekday: "long" });
+    return d.toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+      year: delta > 300 ? "numeric" : undefined,
+    });
+  }
+
+  // Sidebar stamps stay short: time today, weekday this week, date beyond.
+  function formatListTime(atMs) {
+    if (!atMs) return "";
+    var delta = daysAgo(atMs);
+    if (delta <= 0) return formatTime(atMs);
+    if (delta === 1) return "Yesterday";
+    var d = new Date(atMs);
+    if (delta < 7) return d.toLocaleDateString([], { weekday: "short" });
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
   }
 
   function newClientMsgId() {
@@ -234,50 +283,65 @@
     return displayName(t.last_message.author) + ": " + body;
   }
 
+  // A thread's face in the list: the first philosopher's emoji, with a second
+  // one tucked into the corner so group chats read as groups at a glance.
+  function threadAvatarHtml(t) {
+    var agents = (t.member_ids || []).filter(function (id) {
+      return id !== "you";
+    });
+
+    var html = '<span class="thread-avatar">' + avatarHtml(agents[0], "avatar");
+    if (agents.length > 1) {
+      html += avatarHtml(agents[1], "avatar avatar-sub");
+    }
+    return html + "</span>";
+  }
+
   function renderThreadList() {
     var scrollTop = els.threadList.scrollTop;
 
     if (!state.threads.length) {
       els.threadList.innerHTML =
-        '<div class="thread-list-empty">No conversations yet.</div>';
+        '<div class="thread-list-empty">' +
+        '<span class="empty-emoji" aria-hidden="true">🗨️</span>' +
+        "No conversations yet.<br>Invite a few philosophers and get started." +
+        '<br><button class="btn btn-primary btn-small btn-pill" type="button" ' +
+        'data-action="new-thread">New conversation</button></div>';
       return;
     }
 
     els.threadList.innerHTML = state.threads
       .map(function (t) {
-        var emojis = (t.member_ids || [])
-          .filter(function (id) {
-            return id !== "you";
-          })
-          .map(function (id) {
-            var p = personaFor(id);
-            return p ? p.emoji : "";
-          })
-          .join(" ");
-
-        var preview = previewText(t);
         var badge = unreadCount(t);
-        var statusNote = t.status !== "active" ? " · " + t.status : "";
+        var last = t.last_message;
+        var stamp = last ? formatListTime(last.at_ms) : "";
 
         return (
           '<button class="thread-item' +
           (t.id === state.activeId ? " active" : "") +
+          (badge > 0 ? " unread" : "") +
           '" data-thread-id="' +
           esc(t.id) +
           '">' +
+          threadAvatarHtml(t) +
+          '<span class="thread-item-body">' +
           '<span class="thread-item-top">' +
           '<span class="thread-item-name">' +
           esc(t.name) +
           "</span>" +
+          (stamp
+            ? '<span class="thread-item-time">' + esc(stamp) + "</span>"
+            : "") +
+          "</span>" +
+          '<span class="thread-item-bottom">' +
+          '<span class="thread-item-preview">' +
+          esc(previewText(t)) +
+          "</span>" +
+          (t.status !== "active"
+            ? '<span class="thread-item-status">' + esc(t.status) + "</span>"
+            : "") +
           (badge > 0 ? '<span class="unread-badge">' + badge + "</span>" : "") +
           "</span>" +
-          '<span class="thread-item-top">' +
-          '<span class="thread-item-emoji">' +
-          esc(emojis + statusNote) +
-          "</span>" +
-          "</span>" +
-          '<span class="thread-item-preview">' +
-          esc(preview) +
           "</span>" +
           "</button>"
         );
@@ -292,6 +356,12 @@
   els.threadList.addEventListener("click", function (ev) {
     var item = ev.target.closest("[data-thread-id]");
     if (item) openThread(item.getAttribute("data-thread-id"));
+  });
+
+  // Empty-state CTAs live inside markup that gets replaced wholesale, so they
+  // are wired by delegation rather than by direct listener.
+  document.addEventListener("click", function (ev) {
+    if (ev.target.closest('[data-action="new-thread"]')) openModal();
   });
 
   // -- thread view --
@@ -328,12 +398,15 @@
     state.pendingTemp = [];
     state.lastSeq = 0;
     state.backoffIndex = 0;
+    state.seenSeqs = {};
+    state.memberSummary = "";
 
     // Show the pane straight away so a tap on mobile feels immediate.
     els.threadEmpty.classList.add("hidden");
     els.threadView.classList.remove("hidden");
     els.app.classList.add("thread-open");
     els.threadName.textContent = "";
+    els.threadStatus.textContent = "";
     els.memberChips.innerHTML = "";
     els.messages.innerHTML = '<div class="messages-loading">Loading…</div>';
     renderTyping(null);
@@ -376,34 +449,55 @@
     renderTyping(view.typing);
   }
 
+  // The header shows an overlapping avatar stack of the philosophers (the user
+  // is implied, as in every group chat) and lists the names underneath.
   function renderMemberChips(view) {
-    els.memberChips.innerHTML = (view.members || [])
+    var agents = (view.members || []).filter(function (m) {
+      return !m.is_user;
+    });
+
+    var html = agents
+      .slice(0, HEADER_AVATARS)
       .map(function (m) {
-        var chip =
-          '<span class="avatar" style="background:' +
-          safeColor(m.color || "#555") +
-          "33;border:1px solid " +
-          safeColor(m.color || "#555") +
-          '">' +
-          esc(m.emoji || "🙂") +
-          "</span>" +
-          esc(m.name);
-
-        if (m.is_user) {
-          return '<span class="member-chip">' + chip + "</span>";
-        }
-
+        var color = safeColor(m.color || "#555");
         return (
-          '<button class="member-chip" data-agent-id="' +
+          '<button class="member-avatar" data-agent-id="' +
           esc(m.id) +
           '" title="About ' +
           esc(m.name) +
+          '" aria-label="About ' +
+          esc(m.name) +
+          '"><span class="avatar" style="background:' +
+          color +
+          "33;border:1px solid " +
+          color +
           '">' +
-          chip +
-          "</button>"
+          esc(m.emoji || "🙂") +
+          "</span></button>"
         );
       })
       .join("");
+
+    if (agents.length > HEADER_AVATARS) {
+      html +=
+        '<span class="member-more">+' +
+        (agents.length - HEADER_AVATARS) +
+        "</span>";
+    }
+
+    els.memberChips.innerHTML = html;
+
+    var names = agents.map(function (m) {
+      return m.name;
+    });
+    names.push("You");
+    state.memberSummary = names.join(", ");
+  }
+
+  // Subtitle under the thread name: whoever is thinking, else the member list.
+  function setHeaderStatus(typingText) {
+    els.threadStatus.textContent = typingText || state.memberSummary;
+    els.threadStatus.classList.toggle("is-typing", !!typingText);
   }
 
   els.memberChips.addEventListener("click", function (ev) {
@@ -411,36 +505,77 @@
     if (chip) openPersonaDrawer(chip.getAttribute("data-agent-id"));
   });
 
+  // Two consecutive messages share a bubble run when the same author sent them
+  // on the same day without a long pause between.
+  function sameRun(a, b) {
+    if (!a || !b || a.author !== b.author) return false;
+    if (a.at_ms && b.at_ms) {
+      if (!sameDay(a.at_ms, b.at_ms)) return false;
+      if (b.at_ms - a.at_ms > GROUP_GAP_MS) return false;
+    }
+    return true;
+  }
+
+  // "Close enough to the bottom" — a reader inside this margin should be
+  // carried along by new content; anyone further up is reading history.
+  function isScrolledToBottom() {
+    return (
+      els.messages.scrollHeight -
+        els.messages.scrollTop -
+        els.messages.clientHeight <
+      40
+    );
+  }
+
+  function scrollMessagesToBottom() {
+    els.messages.scrollTop = els.messages.scrollHeight;
+  }
+
   function renderMessages(view, force) {
     if (!view) return;
     var messages = (view.messages || []).concat(state.pendingTemp);
     var html = "";
-    var prevAuthor = null;
 
-    messages.forEach(function (m) {
+    messages.forEach(function (m, i) {
+      var prev = messages[i - 1];
+      var next = messages[i + 1];
       var isUser = m.author === "you";
-      var grouped = m.author === prevAuthor;
-      prevAuthor = m.author;
+      var startsRun = !sameRun(prev, m);
+      var endsRun = !sameRun(m, next);
+
+      if (m.at_ms && (!prev || !prev.at_ms || !sameDay(prev.at_ms, m.at_ms))) {
+        html += '<div class="day-divider">' + esc(dayLabel(m.at_ms)) + "</div>";
+      }
+
+      // Only messages that were not on screen last render get the entry
+      // animation — otherwise every repaint would replay the whole thread.
+      var key = m.seq == null ? null : String(m.seq);
+      var isNew = key != null && !state.seenSeqs[key];
+      if (key != null) state.seenSeqs[key] = true;
 
       var cls =
         "msg-row " +
         (isUser ? "user" : "agent") +
-        (grouped ? " grouped" : "") +
+        (startsRun ? " starts-group" : "") +
+        (endsRun ? " ends-group" : "") +
+        (isNew && !force ? " is-new" : "") +
         (m.pending ? " pending" : "");
 
+      // The avatar hangs off the last bubble of a run, so a burst of messages
+      // reads as one speaker rather than a column of repeated faces.
       var avatar = isUser
         ? ""
-        : grouped
-          ? '<span class="msg-avatar-spacer"></span>'
-          : avatarHtml(m.author, "msg-avatar");
+        : endsRun
+          ? avatarHtml(m.author, "msg-avatar")
+          : '<span class="msg-avatar-spacer"></span>';
 
       var author =
-        !isUser && !grouped
-          ? '<div class="msg-author" style="color:' +
+        !isUser && startsRun
+          ? '<span class="msg-author" style="color:' +
             safeColor((personaFor(m.author) || {}).color || "#9aa1b2") +
             '">' +
             esc(displayName(m.author)) +
-            "</div>"
+            "</span>"
           : "";
 
       html +=
@@ -457,20 +592,18 @@
         "</div></div>";
     });
 
-    var atBottom =
-      els.messages.scrollHeight -
-        els.messages.scrollTop -
-        els.messages.clientHeight <
-      40;
+    var atBottom = isScrolledToBottom();
     els.messages.innerHTML = html;
-    if (atBottom || force) {
-      els.messages.scrollTop = els.messages.scrollHeight;
-    }
+    if (atBottom || force) scrollMessagesToBottom();
   }
 
   function renderStatus(view) {
     var paused = view.status !== "active";
     els.pauseBtn.textContent = view.status === "paused" ? "Resume" : "Pause";
+    els.pauseBtn.title =
+      view.status === "paused"
+        ? "Let the philosophers talk again"
+        : "Stop the philosophers from replying";
     els.pausedNote.classList.toggle("hidden", !paused);
     els.composerInput.disabled = paused;
     els.composer.querySelector("button[type=submit]").disabled = paused;
@@ -482,16 +615,40 @@
     if (state.activeView && state.activeView.status !== "active")
       agentId = null;
 
+    // Showing/hiding the bubble resizes the message list; keep a reader who was
+    // already at the bottom pinned there instead of drifting up a row.
+    var wasAtBottom = isScrolledToBottom();
+
     if (!agentId) {
       els.typingIndicator.classList.add("hidden");
       els.typingIndicator.innerHTML = "";
+      setHeaderStatus(null);
+      if (wasAtBottom) scrollMessagesToBottom();
       return;
     }
 
+    var name = displayName(agentId);
+    var color = safeColor((personaFor(agentId) || {}).color || "#9aa1b2");
+
+    // The visible bubble is decorative; the live region announces the sentence.
     els.typingIndicator.innerHTML =
-      esc(displayName(agentId)) +
-      ' is thinking<span class="typing-dots"></span>';
+      '<span class="sr-only">' +
+      esc(name) +
+      " is thinking…</span>" +
+      '<span class="typing-avatar" aria-hidden="true">' +
+      avatarHtml(agentId, "msg-avatar") +
+      "</span>" +
+      '<span class="typing-bubble" aria-hidden="true">' +
+      '<span class="typing-name" style="color:' +
+      color +
+      '">' +
+      esc(name) +
+      "</span>" +
+      '<span class="typing-dots"><i></i><i></i><i></i></span>' +
+      "</span>";
     els.typingIndicator.classList.remove("hidden");
+    setHeaderStatus(name + " is thinking…");
+    if (wasAtBottom) scrollMessagesToBottom();
   }
 
   function markRead() {
