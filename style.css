@@ -52,38 +52,6 @@ input, textarea, select { font: inherit; }
 .btn-small { padding: 5px 10px; font-size: 13px; }
 .btn-block { width: 100%; }
 
-/* -- login -- */
-
-.login-screen {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-.login-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 32px;
-  width: 100%;
-  max-width: 340px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.login-title { margin: 0; font-size: 22px; }
-.login-subtitle { margin: 0; color: var(--text-dim); font-size: 14px; }
-.login-card input {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--text);
-  padding: 10px 12px;
-}
-.login-card input:focus { outline: none; border-color: var(--accent); }
-.login-error { margin: 0; color: var(--danger); font-size: 13px; }
-
 /* -- app layout -- */
 
 .app { display: flex; height: 100%; }

@@ -5,13 +5,11 @@
   var config = window.PHILOSOPHER_CHAT_CONFIG || {};
   var apiBase = (config.apiBase || "").replace(/\/$/, "");
 
-  var TOKEN_KEY = "philosopher_chat_token";
   var LAST_READ_KEY = "philosopher_chat_last_read";
   var BACKOFFS = [2000, 5000, 10000];
   var LIST_POLL_MS = 15000;
 
   var state = {
-    token: localStorage.getItem(TOKEN_KEY) || null,
     roster: [], // [{id, name, era, tradition, emoji, color, doctrine, style, relationships, known_for}]
     rosterById: {},
     threads: [], // summaries
@@ -31,15 +29,10 @@
   function $(id) { return document.getElementById(id); }
 
   var els = {
-    loginScreen: $("login-screen"),
-    loginForm: $("login-form"),
-    loginPassword: $("login-password"),
-    loginError: $("login-error"),
     app: $("app"),
     sidebar: $("sidebar"),
     newThreadBtn: $("new-thread-btn"),
     threadList: $("thread-list"),
-    logoutBtn: $("logout-btn"),
     threadPane: $("thread-pane"),
     threadEmpty: $("thread-empty"),
     threadView: $("thread-view"),
@@ -136,18 +129,12 @@
   async function api(path, opts) {
     opts = opts || {};
     var headers = { "Content-Type": "application/json" };
-    if (state.token) headers["Authorization"] = "Bearer " + state.token;
 
     var res = await fetch(apiBase + path, {
       method: opts.method || "GET",
       headers: headers,
       body: opts.body ? JSON.stringify(opts.body) : undefined
     });
-
-    if (res.status === 401) {
-      showLogin();
-      throw new Error("unauthorized");
-    }
 
     var data = null;
     try { data = await res.json(); } catch (_e) { /* no body */ }
@@ -161,54 +148,6 @@
     return data;
   }
 
-  // -- login --
-
-  function showLogin() {
-    closeStream();
-    state.token = null;
-    localStorage.removeItem(TOKEN_KEY);
-    els.app.classList.add("hidden");
-    els.loginScreen.classList.remove("hidden");
-    if (state.listPoll) { clearInterval(state.listPoll); state.listPoll = null; }
-  }
-
-  function showApp() {
-    els.loginScreen.classList.add("hidden");
-    els.app.classList.remove("hidden");
-  }
-
-  els.logoutBtn.addEventListener("click", function () {
-    showLogin();
-  });
-
-  els.loginForm.addEventListener("submit", async function (ev) {
-    ev.preventDefault();
-    els.loginError.classList.add("hidden");
-
-    try {
-      var res = await fetch(apiBase + "/api/chat/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: els.loginPassword.value })
-      });
-
-      if (!res.ok) {
-        els.loginError.textContent = res.status === 401 ? "Wrong password." : "Cannot reach the server.";
-        els.loginError.classList.remove("hidden");
-        return;
-      }
-
-      var data = await res.json();
-      state.token = data.token;
-      localStorage.setItem(TOKEN_KEY, data.token);
-      els.loginPassword.value = "";
-      await boot();
-    } catch (_e) {
-      els.loginError.textContent = "Cannot reach the server.";
-      els.loginError.classList.remove("hidden");
-    }
-  });
-
   // -- boot --
 
   async function boot() {
@@ -218,7 +157,6 @@
       state.rosterById = {};
       state.roster.forEach(function (c) { state.rosterById[c.id] = c; });
 
-      showApp();
       renderRosterList();
       await refreshThreads();
       renderThreadList();
@@ -230,8 +168,8 @@
           renderThreadList();
         } catch (_e) { /* keep polling */ }
       }, LIST_POLL_MS);
-    } catch (e) {
-      if (e.message !== "unauthorized") toast("Could not reach the server.", "error");
+    } catch (_e) {
+      toast("Could not reach the server.", "error");
     }
   }
 
@@ -312,9 +250,9 @@
       markRead();
       renderThreadList();
       connectStream();
-    } catch (e) {
+    } catch (_e) {
       els.app.classList.remove("thread-open");
-      if (e.message !== "unauthorized") toast("Could not load the thread.", "error");
+      toast("Could not load the thread.", "error");
     }
   }
 
@@ -444,7 +382,7 @@
       await refreshThreads();
       renderThreadList();
     } catch (e) {
-      if (e.message !== "unauthorized") toast(e.message, "error");
+      toast(e.message, "error");
     }
   });
 
@@ -501,7 +439,7 @@
     } catch (e) {
       state.pendingTemp = state.pendingTemp.filter(function (m) { return m.seq !== temp.seq; });
       renderMessages(state.activeView);
-      if (e.message !== "unauthorized") toast(e.message, "error");
+      toast(e.message, "error");
     }
   });
 
@@ -514,26 +452,12 @@
     }
   }
 
-  async function connectStream() {
+  function connectStream() {
     closeStream();
     if (!state.activeId) return;
 
-    var ticket;
-    try {
-      var ticketData = await api("/api/chat/stream-ticket", { method: "POST" });
-      ticket = ticketData.ticket;
-    } catch (e) {
-      if (e.message === "unauthorized") return; // api() already showed the login screen
-      // Stream never opened — retry with backoff like the EventSource error path.
-      var delay = BACKOFFS[Math.min(state.backoffIndex, BACKOFFS.length - 1)];
-      state.backoffIndex += 1;
-      setTimeout(connectStream, delay);
-      return;
-    }
-
     var url = apiBase + "/api/chat/threads/" + encodeURIComponent(state.activeId) +
-      "/stream?ticket=" + encodeURIComponent(ticket) +
-      "&since=" + state.lastSeq;
+      "/stream?since=" + state.lastSeq;
 
     var es = new EventSource(url);
     state.eventSource = es;
@@ -574,8 +498,7 @@
           await refreshThreads();
           renderThreadList();
           connectStream();
-        } catch (e) {
-          if (e.message === "unauthorized") return;
+        } catch (_e) {
           connectStream();
         }
       }, delay);
@@ -788,7 +711,6 @@
       renderThreadList();
       openThread(data.thread_id);
     } catch (e) {
-      if (e.message === "unauthorized") return;
       els.newThreadError.textContent = e.message;
       els.newThreadError.classList.remove("hidden");
     }
@@ -796,9 +718,5 @@
 
   // -- start --
 
-  if (state.token) {
-    boot();
-  } else {
-    showLogin();
-  }
+  boot();
 })();

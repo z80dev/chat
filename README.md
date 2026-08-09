@@ -14,4 +14,4 @@ Then edit `config.js` to set `apiBase` to your local backend (e.g. `http://local
 
 ## Deployment
 
-Served at `z80.wtf/chat/` via GitHub Pages from the `z80dev/chat` repository. `config.js` points at the production API (`https://chat-api.gr33n.lol`).
+Served at `z80.wtf/chat/` via GitHub Pages from the `z80dev/chat` repository. `config.js` points at the production API (`https://chat-api.gr33n.lol`). The API is open access (no login) since Aug 2026 — the app boots straight into the thread list.
