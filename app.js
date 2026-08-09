@@ -21,12 +21,14 @@
     epoch: null, // server process generation; changes when the backend restarts
     pendingTemp: [], // optimistic messages not yet confirmed
     lastRead: loadLastRead(),
-    listPoll: null
+    listPoll: null,
   };
 
   // -- DOM shortcuts --
 
-  function $(id) { return document.getElementById(id); }
+  function $(id) {
+    return document.getElementById(id);
+  }
 
   var els = {
     app: $("app"),
@@ -57,7 +59,7 @@
     newThreadPace: $("new-thread-pace"),
     newThreadError: $("new-thread-error"),
     rosterList: $("roster-list"),
-    toasts: $("toasts")
+    toasts: $("toasts"),
   };
 
   // -- helpers --
@@ -92,7 +94,9 @@
     el.className = "toast" + (kind === "error" ? " error" : "");
     el.textContent = text;
     els.toasts.appendChild(el);
-    setTimeout(function () { el.remove(); }, 4500);
+    setTimeout(function () {
+      el.remove();
+    }, 4500);
   }
 
   function personaFor(id) {
@@ -109,8 +113,17 @@
     var p = personaFor(id);
     var emoji = id === "you" ? "🙂" : p ? p.emoji : "❔";
     var color = id === "you" ? "#4caf9d" : p ? p.color : "#555";
-    return '<span class="' + cls + '" style="background:' + safeColor(color) + '33;border:1px solid ' +
-      safeColor(color) + '">' + esc(emoji) + "</span>";
+    return (
+      '<span class="' +
+      cls +
+      '" style="background:' +
+      safeColor(color) +
+      "33;border:1px solid " +
+      safeColor(color) +
+      '">' +
+      esc(emoji) +
+      "</span>"
+    );
   }
 
   function formatTime(atMs) {
@@ -133,11 +146,15 @@
     var res = await fetch(apiBase + path, {
       method: opts.method || "GET",
       headers: headers,
-      body: opts.body ? JSON.stringify(opts.body) : undefined
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
 
     var data = null;
-    try { data = await res.json(); } catch (_e) { /* no body */ }
+    try {
+      data = await res.json();
+    } catch (_e) {
+      /* no body */
+    }
 
     if (!res.ok) {
       var err = new Error((data && data.error) || "Request failed");
@@ -155,7 +172,9 @@
       var rosterData = await api("/api/chat/roster");
       state.roster = rosterData.contacts || [];
       state.rosterById = {};
-      state.roster.forEach(function (c) { state.rosterById[c.id] = c; });
+      state.roster.forEach(function (c) {
+        state.rosterById[c.id] = c;
+      });
 
       renderRosterList();
       await refreshThreads();
@@ -166,7 +185,9 @@
         try {
           await refreshThreads();
           renderThreadList();
-        } catch (_e) { /* keep polling */ }
+        } catch (_e) {
+          /* keep polling */
+        }
       }, LIST_POLL_MS);
     } catch (_e) {
       toast("Could not reach the server.", "error");
@@ -189,40 +210,54 @@
 
   function renderThreadList() {
     if (!state.threads.length) {
-      els.threadList.innerHTML = '<div class="thread-list-empty">No conversations yet.</div>';
+      els.threadList.innerHTML =
+        '<div class="thread-list-empty">No conversations yet.</div>';
       return;
     }
 
-    els.threadList.innerHTML = state.threads.map(function (t) {
-      var emojis = (t.member_ids || [])
-        .filter(function (id) { return id !== "you"; })
-        .map(function (id) {
-          var p = personaFor(id);
-          return p ? p.emoji : "";
-        })
-        .join(" ");
+    els.threadList.innerHTML = state.threads
+      .map(function (t) {
+        var emojis = (t.member_ids || [])
+          .filter(function (id) {
+            return id !== "you";
+          })
+          .map(function (id) {
+            var p = personaFor(id);
+            return p ? p.emoji : "";
+          })
+          .join(" ");
 
-      var preview = t.last_message
-        ? displayName(t.last_message.author) + ": " + t.last_message.text
-        : "No messages yet";
+        var preview = t.last_message
+          ? displayName(t.last_message.author) + ": " + t.last_message.text
+          : "No messages yet";
 
-      var badge = unreadCount(t);
-      var statusNote = t.status !== "active" ? " · " + t.status : "";
+        var badge = unreadCount(t);
+        var statusNote = t.status !== "active" ? " · " + t.status : "";
 
-      return (
-        '<button class="thread-item' + (t.id === state.activeId ? " active" : "") +
-        '" data-thread-id="' + esc(t.id) + '">' +
-        '<span class="thread-item-top">' +
-        '<span class="thread-item-name">' + esc(t.name) + "</span>" +
-        (badge > 0 ? '<span class="unread-badge">' + badge + "</span>" : "") +
-        "</span>" +
-        '<span class="thread-item-top">' +
-        '<span class="thread-item-emoji">' + esc(emojis + statusNote) + "</span>" +
-        "</span>" +
-        '<span class="thread-item-preview">' + esc(preview) + "</span>" +
-        "</button>"
-      );
-    }).join("");
+        return (
+          '<button class="thread-item' +
+          (t.id === state.activeId ? " active" : "") +
+          '" data-thread-id="' +
+          esc(t.id) +
+          '">' +
+          '<span class="thread-item-top">' +
+          '<span class="thread-item-name">' +
+          esc(t.name) +
+          "</span>" +
+          (badge > 0 ? '<span class="unread-badge">' + badge + "</span>" : "") +
+          "</span>" +
+          '<span class="thread-item-top">' +
+          '<span class="thread-item-emoji">' +
+          esc(emojis + statusNote) +
+          "</span>" +
+          "</span>" +
+          '<span class="thread-item-preview">' +
+          esc(preview) +
+          "</span>" +
+          "</button>"
+        );
+      })
+      .join("");
   }
 
   els.threadList.addEventListener("click", function (ev) {
@@ -268,18 +303,33 @@
   }
 
   function renderMemberChips(view) {
-    els.memberChips.innerHTML = (view.members || []).map(function (m) {
-      var chip =
-        '<span class="avatar" style="background:' + safeColor(m.color || "#555") + '33;border:1px solid ' +
-        safeColor(m.color || "#555") + '">' + esc(m.emoji || "🙂") + "</span>" + esc(m.name);
+    els.memberChips.innerHTML = (view.members || [])
+      .map(function (m) {
+        var chip =
+          '<span class="avatar" style="background:' +
+          safeColor(m.color || "#555") +
+          "33;border:1px solid " +
+          safeColor(m.color || "#555") +
+          '">' +
+          esc(m.emoji || "🙂") +
+          "</span>" +
+          esc(m.name);
 
-      if (m.is_user) {
-        return '<span class="member-chip">' + chip + "</span>";
-      }
+        if (m.is_user) {
+          return '<span class="member-chip">' + chip + "</span>";
+        }
 
-      return '<button class="member-chip" data-agent-id="' + esc(m.id) + '" title="About ' +
-        esc(m.name) + '">' + chip + "</button>";
-    }).join("");
+        return (
+          '<button class="member-chip" data-agent-id="' +
+          esc(m.id) +
+          '" title="About ' +
+          esc(m.name) +
+          '">' +
+          chip +
+          "</button>"
+        );
+      })
+      .join("");
   }
 
   els.memberChips.addEventListener("click", function (ev) {
@@ -297,8 +347,11 @@
       var grouped = m.author === prevAuthor;
       prevAuthor = m.author;
 
-      var cls = "msg-row " + (isUser ? "user" : "agent") +
-        (grouped ? " grouped" : "") + (m.pending ? " pending" : "");
+      var cls =
+        "msg-row " +
+        (isUser ? "user" : "agent") +
+        (grouped ? " grouped" : "") +
+        (m.pending ? " pending" : "");
 
       var avatar = isUser
         ? ""
@@ -306,19 +359,34 @@
           ? '<span class="msg-avatar-spacer"></span>'
           : avatarHtml(m.author, "msg-avatar");
 
-      var author = !isUser && !grouped
-        ? '<div class="msg-author" style="color:' + safeColor((personaFor(m.author) || {}).color || "#9aa1b2") +
-          '">' + esc(displayName(m.author)) + "</div>"
-        : "";
+      var author =
+        !isUser && !grouped
+          ? '<div class="msg-author" style="color:' +
+            safeColor((personaFor(m.author) || {}).color || "#9aa1b2") +
+            '">' +
+            esc(displayName(m.author)) +
+            "</div>"
+          : "";
 
       html +=
-        '<div class="' + cls + '">' + avatar +
-        '<div class="msg-bubble">' + author + esc(m.text) +
-        '<span class="msg-time">' + esc(formatTime(m.at_ms)) + "</span>" +
+        '<div class="' +
+        cls +
+        '">' +
+        avatar +
+        '<div class="msg-bubble">' +
+        author +
+        esc(m.text) +
+        '<span class="msg-time">' +
+        esc(formatTime(m.at_ms)) +
+        "</span>" +
         "</div></div>";
     });
 
-    var atBottom = els.messages.scrollHeight - els.messages.scrollTop - els.messages.clientHeight < 40;
+    var atBottom =
+      els.messages.scrollHeight -
+        els.messages.scrollTop -
+        els.messages.clientHeight <
+      40;
     els.messages.innerHTML = html;
     if (atBottom || force) {
       els.messages.scrollTop = els.messages.scrollHeight;
@@ -341,7 +409,8 @@
     }
 
     els.typingIndicator.innerHTML =
-      esc(displayName(agentId)) + ' is thinking<span class="typing-dots"></span>';
+      esc(displayName(agentId)) +
+      ' is thinking<span class="typing-dots"></span>';
     els.typingIndicator.classList.remove("hidden");
   }
 
@@ -374,9 +443,15 @@
     var action = state.activeView.status === "paused" ? "resume" : "pause";
 
     try {
-      var data = await api("/api/chat/threads/" + encodeURIComponent(state.activeId) + "/" + action, {
-        method: "POST"
-      });
+      var data = await api(
+        "/api/chat/threads/" +
+          encodeURIComponent(state.activeId) +
+          "/" +
+          action,
+        {
+          method: "POST",
+        },
+      );
       state.activeView.status = data.status;
       renderStatus(state.activeView);
       await refreshThreads();
@@ -390,7 +465,8 @@
 
   function autoGrow() {
     els.composerInput.style.height = "auto";
-    els.composerInput.style.height = Math.min(els.composerInput.scrollHeight, 140) + "px";
+    els.composerInput.style.height =
+      Math.min(els.composerInput.scrollHeight, 140) + "px";
   }
 
   els.composerInput.addEventListener("input", autoGrow);
@@ -404,7 +480,12 @@
 
   els.composer.addEventListener("submit", async function (ev) {
     ev.preventDefault();
-    if (!state.activeId || !state.activeView || state.activeView.status !== "active") return;
+    if (
+      !state.activeId ||
+      !state.activeView ||
+      state.activeView.status !== "active"
+    )
+      return;
 
     var text = els.composerInput.value.trim();
     if (!text) return;
@@ -418,26 +499,33 @@
       author: "you",
       text: text,
       at_ms: Date.now(),
-      pending: true
+      pending: true,
     };
 
     state.pendingTemp.push(temp);
     renderMessages(state.activeView);
 
     try {
-      var data = await api("/api/chat/threads/" + encodeURIComponent(state.activeId) + "/messages", {
-        method: "POST",
-        body: { text: text, client_msg_id: clientMsgId }
-      });
+      var data = await api(
+        "/api/chat/threads/" + encodeURIComponent(state.activeId) + "/messages",
+        {
+          method: "POST",
+          body: { text: text, client_msg_id: clientMsgId },
+        },
+      );
 
-      state.pendingTemp = state.pendingTemp.filter(function (m) { return m.seq !== temp.seq; });
+      state.pendingTemp = state.pendingTemp.filter(function (m) {
+        return m.seq !== temp.seq;
+      });
       state.activeView = data.thread;
       renderMessages(state.activeView);
       markRead();
       await refreshThreads();
       renderThreadList();
     } catch (e) {
-      state.pendingTemp = state.pendingTemp.filter(function (m) { return m.seq !== temp.seq; });
+      state.pendingTemp = state.pendingTemp.filter(function (m) {
+        return m.seq !== temp.seq;
+      });
       renderMessages(state.activeView);
       toast(e.message, "error");
     }
@@ -456,8 +544,12 @@
     closeStream();
     if (!state.activeId) return;
 
-    var url = apiBase + "/api/chat/threads/" + encodeURIComponent(state.activeId) +
-      "/stream?since=" + state.lastSeq;
+    var url =
+      apiBase +
+      "/api/chat/threads/" +
+      encodeURIComponent(state.activeId) +
+      "/stream?since=" +
+      state.lastSeq;
 
     var es = new EventSource(url);
     state.eventSource = es;
@@ -468,7 +560,11 @@
 
     es.onmessage = function (ev) {
       var payload;
-      try { payload = JSON.parse(ev.data); } catch (_e) { return; }
+      try {
+        payload = JSON.parse(ev.data);
+      } catch (_e) {
+        return;
+      }
       if (typeof payload.event_seq === "number") {
         state.lastSeq = Math.max(state.lastSeq, payload.event_seq);
       }
@@ -487,7 +583,9 @@
 
         // Catch up on anything missed while disconnected.
         try {
-          var data = await api("/api/chat/threads/" + encodeURIComponent(state.activeId));
+          var data = await api(
+            "/api/chat/threads/" + encodeURIComponent(state.activeId),
+          );
           state.activeView = data.thread;
           if (data.thread.epoch !== state.epoch) {
             state.lastSeq = 0; // server restarted; replay everything
@@ -519,7 +617,9 @@
         });
 
         if (!exists) {
-          state.activeView.messages = (state.activeView.messages || []).concat([msg]);
+          state.activeView.messages = (state.activeView.messages || []).concat([
+            msg,
+          ]);
         }
 
         if (msg.author === "you") {
@@ -542,7 +642,9 @@
           markRead();
         }
 
-        refreshThreads().then(renderThreadList).catch(function () {});
+        refreshThreads()
+          .then(renderThreadList)
+          .catch(function () {});
         break;
 
       case "typing":
@@ -553,7 +655,9 @@
       case "status":
         state.activeView.status = payload.status;
         renderStatus(state.activeView);
-        refreshThreads().then(renderThreadList).catch(function () {});
+        refreshThreads()
+          .then(renderThreadList)
+          .catch(function () {});
         break;
 
       case "agent_error":
@@ -565,7 +669,12 @@
           state.activeView.typing = null;
           renderTyping(null);
         }
-        toast(displayName(payload.agent_id) + " " + (payload.reason || "has gone quiet."), "error");
+        toast(
+          displayName(payload.agent_id) +
+            " " +
+            (payload.reason || "has gone quiet."),
+          "error",
+        );
         break;
     }
   }
@@ -586,8 +695,12 @@
     els.drawerIdentity.innerHTML =
       avatarHtml(agentId, "avatar") +
       "<div>" +
-      '<div class="drawer-name">' + esc(p.name) + "</div>" +
-      '<div class="drawer-era">' + esc(p.era || "") + "</div>" +
+      '<div class="drawer-name">' +
+      esc(p.name) +
+      "</div>" +
+      '<div class="drawer-era">' +
+      esc(p.era || "") +
+      "</div>" +
       "</div>";
 
     els.drawerBody.innerHTML =
@@ -602,8 +715,10 @@
 
     try {
       var data = await api(
-        "/api/chat/threads/" + encodeURIComponent(state.activeId) +
-          "/memories/" + encodeURIComponent(agentId)
+        "/api/chat/threads/" +
+          encodeURIComponent(state.activeId) +
+          "/memories/" +
+          encodeURIComponent(agentId),
       );
 
       var files = (data.memories && data.memories.files) || [];
@@ -613,10 +728,17 @@
 
       var html;
       if (opinions.length) {
-        html = opinions.map(function (f) {
-          return '<div class="opinion"><span class="opinion-path">' + esc(f.path) + "</span>" +
-            esc(f.content) + "</div>";
-        }).join("");
+        html = opinions
+          .map(function (f) {
+            return (
+              '<div class="opinion"><span class="opinion-path">' +
+              esc(f.path) +
+              "</span>" +
+              esc(f.content) +
+              "</div>"
+            );
+          })
+          .join("");
       } else {
         html = '<p class="opinion">No written opinions yet.</p>';
       }
@@ -629,7 +751,13 @@
 
   function section(title, text) {
     if (!text) return "";
-    return '<div class="drawer-section"><h3>' + esc(title) + "</h3><p>" + esc(text) + "</p></div>";
+    return (
+      '<div class="drawer-section"><h3>' +
+      esc(title) +
+      "</h3><p>" +
+      esc(text) +
+      "</p></div>"
+    );
   }
 
   function setDrawerOpinions(html) {
@@ -649,16 +777,29 @@
   // -- new thread modal --
 
   function renderRosterList() {
-    els.rosterList.innerHTML = state.roster.map(function (c) {
-      return (
-        '<label class="roster-item" data-roster-id="' + esc(c.id) + '">' +
-        '<input type="checkbox" value="' + esc(c.id) + '">' +
-        '<span class="avatar" style="background:' + safeColor(c.color) + '33;border:1px solid ' +
-        safeColor(c.color) + '">' + esc(c.emoji) + "</span>" +
-        '<span class="roster-item-name">' + esc(c.name) + "</span>" +
-        "</label>"
-      );
-    }).join("");
+    els.rosterList.innerHTML = state.roster
+      .map(function (c) {
+        return (
+          '<label class="roster-item" data-roster-id="' +
+          esc(c.id) +
+          '">' +
+          '<input type="checkbox" value="' +
+          esc(c.id) +
+          '">' +
+          '<span class="avatar" style="background:' +
+          safeColor(c.color) +
+          "33;border:1px solid " +
+          safeColor(c.color) +
+          '">' +
+          esc(c.emoji) +
+          "</span>" +
+          '<span class="roster-item-name">' +
+          esc(c.name) +
+          "</span>" +
+          "</label>"
+        );
+      })
+      .join("");
   }
 
   els.rosterList.addEventListener("change", function (ev) {
@@ -693,7 +834,9 @@
 
     var memberIds = Array.prototype.map.call(
       els.rosterList.querySelectorAll("input:checked"),
-      function (input) { return input.value; }
+      function (input) {
+        return input.value;
+      },
     );
 
     try {
@@ -702,8 +845,8 @@
         body: {
           name: els.newThreadName.value,
           member_ids: memberIds,
-          pace: els.newThreadPace.value
-        }
+          pace: els.newThreadPace.value,
+        },
       });
 
       closeModal();
