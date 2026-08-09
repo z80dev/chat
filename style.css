@@ -862,6 +862,13 @@ select {
 .drawer-section {
   margin-bottom: 20px;
 }
+.drawer-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--text);
+  display: grid;
+  gap: 4px;
+}
 .drawer-section h3 {
   margin: 0 0 7px;
   font-size: 11.5px;

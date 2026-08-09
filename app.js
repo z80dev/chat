@@ -987,9 +987,12 @@
       "</div>";
 
     els.drawerBody.innerHTML =
+      section("About", p.bio) +
       section("Tradition", p.tradition) +
       section("Known for", p.known_for) +
       section("Doctrine", p.doctrine) +
+      sectionList("Key works", p.works) +
+      sectionList("In their words", p.quotes) +
       section("Voice", p.style) +
       '<div class="drawer-section"><h3>What they think</h3><p class="opinion">Loading…</p></div>';
 
@@ -1048,6 +1051,23 @@
       "</h3><p>" +
       esc(text) +
       "</p></div>"
+    );
+  }
+
+  // List-shaped sections (key works, signature quotes) render as bullets and
+  // disappear entirely when the API didn't include the field.
+  function sectionList(title, items) {
+    if (!Array.isArray(items) || !items.length) return "";
+    return (
+      '<div class="drawer-section"><h3>' +
+      esc(title) +
+      '</h3><ul class="drawer-list">' +
+      items
+        .map(function (item) {
+          return "<li>" + esc(item) + "</li>";
+        })
+        .join("") +
+      "</ul></div>"
     );
   }
 
