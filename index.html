@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Philosopher Chat</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Login screen -->
+  <div id="login-screen" class="login-screen hidden">
+    <form id="login-form" class="login-card">
+      <h1 class="login-title">Philosopher Chat</h1>
+      <p class="login-subtitle">Group conversations across the centuries.</p>
+      <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" autofocus>
+      <button type="submit" class="btn btn-primary btn-block">Enter</button>
+      <p id="login-error" class="login-error hidden">Wrong password.</p>
+    </form>
+  </div>
+
+  <!-- App shell -->
+  <div id="app" class="app hidden">
+    <aside id="sidebar" class="sidebar">
+      <header class="sidebar-header">
+        <span class="app-title">Philosopher Chat</span>
+        <button id="new-thread-btn" class="btn btn-primary btn-small" title="New Chat">+ New</button>
+      </header>
+      <div id="thread-list" class="thread-list"></div>
+      <footer class="sidebar-footer"><button id="logout-btn" class="btn btn-ghost btn-small">Log out</button></footer>
+    </aside>
+
+    <main id="thread-pane" class="thread-pane">
+      <div id="thread-empty" class="thread-empty">
+        <p>Pick a conversation, or start a new one.</p>
+      </div>
+
+      <div id="thread-view" class="thread-view hidden">
+        <header class="thread-header">
+          <button id="back-btn" class="btn btn-ghost back-btn" title="Back">&larr;</button>
+          <div class="thread-header-main">
+            <h2 id="thread-name" class="thread-name"></h2>
+            <div id="member-chips" class="member-chips"></div>
+          </div>
+          <button id="pause-btn" class="btn btn-ghost btn-small"></button>
+        </header>
+        <div id="messages" class="messages"></div>
+        <div id="typing-indicator" class="typing-indicator hidden"></div>
+        <footer class="composer-wrap">
+          <div id="paused-note" class="paused-note hidden">Paused — resume to keep talking.</div>
+          <form id="composer" class="composer">
+            <textarea id="composer-input" rows="1" placeholder="Say something&hellip;"></textarea>
+            <button type="submit" class="btn btn-primary send-btn" title="Send">&#10148;</button>
+          </form>
+        </footer>
+      </div>
+    </main>
+  </div>
+
+  <!-- Persona drawer -->
+  <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+  <aside id="persona-drawer" class="persona-drawer hidden">
+    <header class="drawer-header">
+      <div id="drawer-identity" class="drawer-identity"></div>
+      <button id="drawer-close" class="btn btn-ghost" title="Close">&times;</button>
+    </header>
+    <div id="drawer-body" class="drawer-body"></div>
+  </aside>
+
+  <!-- New thread modal -->
+  <div id="modal-backdrop" class="modal-backdrop hidden">
+    <div class="modal">
+      <header class="modal-header">
+        <h2>New conversation</h2>
+        <button id="modal-close" class="btn btn-ghost" title="Close">&times;</button>
+      </header>
+      <form id="new-thread-form" class="modal-body">
+        <label class="field">
+          <span class="field-label">Name</span>
+          <input id="new-thread-name" type="text" maxlength="60" placeholder="The Symposium" required>
+        </label>
+        <div class="field">
+          <span class="field-label">Philosophers <span id="roster-count" class="field-hint">(pick 1&ndash;6)</span></span>
+          <div id="roster-list" class="roster-list"></div>
+        </div>
+        <label class="field">
+          <span class="field-label">Pace</span>
+          <select id="new-thread-pace">
+            <option value="relaxed" selected>Relaxed</option>
+            <option value="chatty">Chatty</option>
+          </select>
+        </label>
+        <p id="new-thread-error" class="form-error hidden"></p>
+        <button type="submit" class="btn btn-primary btn-block">Create</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
