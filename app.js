@@ -22,7 +22,12 @@
     pendingTemp: [], // optimistic messages not yet confirmed
     lastRead: loadLastRead(),
     listPoll: null,
+    openToken: 0, // guards against out-of-order thread loads
+    drawerAgentId: null, // guards against out-of-order persona loads
+    reconnectTimer: null,
   };
+
+  var MAX_MEMBERS = 6;
 
   // -- DOM shortcuts --
 
@@ -191,7 +196,17 @@
       }, LIST_POLL_MS);
     } catch (_e) {
       toast("Could not reach the server.", "error");
+      renderBootError();
     }
+  }
+
+  // Boot failed before the sidebar had anything to show — offer a way back in.
+  function renderBootError() {
+    els.threadList.innerHTML =
+      '<div class="thread-list-empty">Could not reach the server.<br>' +
+      '<button id="boot-retry" class="btn btn-small retry-btn">Retry</button></div>';
+    var retry = $("boot-retry");
+    if (retry) retry.addEventListener("click", boot);
   }
 
   async function refreshThreads() {
@@ -208,7 +223,20 @@
     return Math.max(0, last.seq - read);
   }
 
+  // Previews live on one line; collapse newlines and cap the string so a wall
+  // of text never bloats the list markup.
+  function previewText(t) {
+    if (!t.last_message) return "No messages yet";
+    var body = String(t.last_message.text || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (body.length > 140) body = body.slice(0, 140) + "…";
+    return displayName(t.last_message.author) + ": " + body;
+  }
+
   function renderThreadList() {
+    var scrollTop = els.threadList.scrollTop;
+
     if (!state.threads.length) {
       els.threadList.innerHTML =
         '<div class="thread-list-empty">No conversations yet.</div>';
@@ -227,10 +255,7 @@
           })
           .join(" ");
 
-        var preview = t.last_message
-          ? displayName(t.last_message.author) + ": " + t.last_message.text
-          : "No messages yet";
-
+        var preview = previewText(t);
         var badge = unreadCount(t);
         var statusNote = t.status !== "active" ? " · " + t.status : "";
 
@@ -258,6 +283,10 @@
         );
       })
       .join("");
+
+    // Re-rendering wholesale on every poll/event would otherwise jump the list
+    // back to the top while the reader is scrolled down it.
+    els.threadList.scrollTop = scrollTop;
   }
 
   els.threadList.addEventListener("click", function (ev) {
@@ -267,28 +296,73 @@
 
   // -- thread view --
 
+  // Adopt a thread snapshot as the active view. `latest_seq` is the event-log
+  // cursor the snapshot was taken at, so the stream only has to replay what
+  // happened after it — starting from 0 would re-deliver stale typing events.
+  function adoptThread(thread) {
+    state.activeView = thread;
+    var latest =
+      typeof thread.latest_seq === "number" ? thread.latest_seq : null;
+
+    if (thread.epoch && thread.epoch !== state.epoch) {
+      // New server generation: its event log restarted, so take its cursor as-is.
+      state.epoch = thread.epoch;
+      state.lastSeq = latest == null ? 0 : latest;
+    } else if (latest != null) {
+      state.lastSeq = Math.max(state.lastSeq, latest);
+    }
+  }
+
+  function showEmptyPane() {
+    els.app.classList.remove("thread-open");
+    els.threadView.classList.add("hidden");
+    els.threadEmpty.classList.remove("hidden");
+  }
+
   async function openThread(id) {
+    var token = ++state.openToken;
+
+    closeStream();
     state.activeId = id;
+    state.activeView = null;
     state.pendingTemp = [];
     state.lastSeq = 0;
     state.backoffIndex = 0;
 
+    // Show the pane straight away so a tap on mobile feels immediate.
     els.threadEmpty.classList.add("hidden");
     els.threadView.classList.remove("hidden");
+    els.app.classList.add("thread-open");
+    els.threadName.textContent = "";
+    els.memberChips.innerHTML = "";
+    els.messages.innerHTML = '<div class="messages-loading">Loading…</div>';
+    renderTyping(null);
 
     try {
       var data = await api("/api/chat/threads/" + encodeURIComponent(id));
-      state.activeView = data.thread;
-      state.epoch = data.thread.epoch;
-      els.app.classList.add("thread-open");
+      if (token !== state.openToken) return; // a newer open won
+
+      adoptThread(data.thread);
       renderThreadView();
       markRead();
       renderThreadList();
       connectStream();
+      focusComposer();
     } catch (_e) {
-      els.app.classList.remove("thread-open");
+      if (token !== state.openToken) return;
+      state.activeId = null;
+      showEmptyPane();
+      renderThreadList();
       toast("Could not load the thread.", "error");
     }
+  }
+
+  // Keyboards on small screens cover the thread, so only pull focus on wide ones.
+  function focusComposer() {
+    if (window.matchMedia && window.matchMedia("(max-width: 700px)").matches) {
+      return;
+    }
+    if (!els.composerInput.disabled) els.composerInput.focus();
   }
 
   function renderThreadView() {
@@ -338,6 +412,7 @@
   });
 
   function renderMessages(view, force) {
+    if (!view) return;
     var messages = (view.messages || []).concat(state.pendingTemp);
     var html = "";
     var prevAuthor = null;
@@ -399,9 +474,14 @@
     els.pausedNote.classList.toggle("hidden", !paused);
     els.composerInput.disabled = paused;
     els.composer.querySelector("button[type=submit]").disabled = paused;
+    if (paused) renderTyping(null);
   }
 
   function renderTyping(agentId) {
+    // Nobody is thinking while the thread is paused.
+    if (state.activeView && state.activeView.status !== "active")
+      agentId = null;
+
     if (!agentId) {
       els.typingIndicator.classList.add("hidden");
       els.typingIndicator.innerHTML = "";
@@ -429,35 +509,38 @@
   }
 
   els.backBtn.addEventListener("click", function () {
+    state.openToken += 1; // cancel any in-flight open
     closeStream();
     state.activeId = null;
     state.activeView = null;
-    els.app.classList.remove("thread-open");
-    els.threadView.classList.add("hidden");
-    els.threadEmpty.classList.remove("hidden");
+    state.pendingTemp = [];
+    renderTyping(null);
+    showEmptyPane();
     renderThreadList();
   });
 
   els.pauseBtn.addEventListener("click", async function () {
     if (!state.activeId || !state.activeView) return;
+    var threadId = state.activeId;
     var action = state.activeView.status === "paused" ? "resume" : "pause";
 
+    els.pauseBtn.disabled = true;
     try {
       var data = await api(
-        "/api/chat/threads/" +
-          encodeURIComponent(state.activeId) +
-          "/" +
-          action,
+        "/api/chat/threads/" + encodeURIComponent(threadId) + "/" + action,
         {
           method: "POST",
         },
       );
+      if (state.activeId !== threadId || !state.activeView) return;
       state.activeView.status = data.status;
       renderStatus(state.activeView);
       await refreshThreads();
       renderThreadList();
     } catch (e) {
       toast(e.message, "error");
+    } finally {
+      els.pauseBtn.disabled = false;
     }
   });
 
@@ -472,6 +555,8 @@
   els.composerInput.addEventListener("input", autoGrow);
 
   els.composerInput.addEventListener("keydown", function (ev) {
+    // isComposing: don't steal Enter while an IME candidate is being chosen.
+    if (ev.isComposing || ev.keyCode === 229) return;
     if (ev.key === "Enter" && !ev.shiftKey) {
       ev.preventDefault();
       els.composer.requestSubmit();
@@ -490,6 +575,7 @@
     var text = els.composerInput.value.trim();
     if (!text) return;
 
+    var threadId = state.activeId;
     els.composerInput.value = "";
     autoGrow();
 
@@ -507,33 +593,48 @@
 
     try {
       var data = await api(
-        "/api/chat/threads/" + encodeURIComponent(state.activeId) + "/messages",
+        "/api/chat/threads/" + encodeURIComponent(threadId) + "/messages",
         {
           method: "POST",
           body: { text: text, client_msg_id: clientMsgId },
         },
       );
 
-      state.pendingTemp = state.pendingTemp.filter(function (m) {
-        return m.seq !== temp.seq;
-      });
-      state.activeView = data.thread;
+      // The reader may have moved on to another thread while this was in flight.
+      if (state.activeId !== threadId) return;
+
+      dropTemp(temp);
+      adoptThread(data.thread);
       renderMessages(state.activeView);
       markRead();
       await refreshThreads();
       renderThreadList();
     } catch (e) {
-      state.pendingTemp = state.pendingTemp.filter(function (m) {
-        return m.seq !== temp.seq;
-      });
+      if (state.activeId !== threadId) return;
+      dropTemp(temp);
       renderMessages(state.activeView);
+      // Give the text back rather than silently losing what was typed.
+      if (!els.composerInput.value.trim()) {
+        els.composerInput.value = text;
+        autoGrow();
+      }
       toast(e.message, "error");
     }
   });
 
+  function dropTemp(temp) {
+    state.pendingTemp = state.pendingTemp.filter(function (m) {
+      return m.seq !== temp.seq;
+    });
+  }
+
   // -- SSE stream --
 
   function closeStream() {
+    if (state.reconnectTimer) {
+      clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
+    }
     if (state.eventSource) {
       state.eventSource.close();
       state.eventSource = null;
@@ -544,10 +645,11 @@
     closeStream();
     if (!state.activeId) return;
 
+    var threadId = state.activeId;
     var url =
       apiBase +
       "/api/chat/threads/" +
-      encodeURIComponent(state.activeId) +
+      encodeURIComponent(threadId) +
       "/stream?since=" +
       state.lastSeq;
 
@@ -578,29 +680,45 @@
       var delay = BACKOFFS[Math.min(state.backoffIndex, BACKOFFS.length - 1)];
       state.backoffIndex += 1;
 
-      setTimeout(async function () {
-        if (!state.activeId) return;
+      state.reconnectTimer = setTimeout(async function () {
+        state.reconnectTimer = null;
+        if (state.activeId !== threadId) return; // moved on to another thread
 
         // Catch up on anything missed while disconnected.
         try {
           var data = await api(
-            "/api/chat/threads/" + encodeURIComponent(state.activeId),
+            "/api/chat/threads/" + encodeURIComponent(threadId),
           );
-          state.activeView = data.thread;
-          if (data.thread.epoch !== state.epoch) {
-            state.lastSeq = 0; // server restarted; replay everything
-            state.epoch = data.thread.epoch;
-          }
+          if (state.activeId !== threadId) return;
+          adoptThread(data.thread);
           renderThreadView();
           markRead();
           await refreshThreads();
+          if (state.activeId !== threadId) return;
           renderThreadList();
           connectStream();
         } catch (_e) {
-          connectStream();
+          if (state.activeId === threadId) connectStream();
         }
       }, delay);
     };
+  }
+
+  // Keep messages ordered by seq — a replayed or late event can arrive out of
+  // order, and appending blindly would show it in the wrong place.
+  function insertMessage(msg) {
+    var list = state.activeView.messages || [];
+    var i = list.length;
+    while (
+      i > 0 &&
+      typeof list[i - 1].seq === "number" &&
+      typeof msg.seq === "number" &&
+      list[i - 1].seq > msg.seq
+    ) {
+      i -= 1;
+    }
+    list.splice(i, 0, msg);
+    state.activeView.messages = list;
   }
 
   function handleStreamEvent(payload) {
@@ -616,11 +734,7 @@
           return m.seq === msg.seq;
         });
 
-        if (!exists) {
-          state.activeView.messages = (state.activeView.messages || []).concat([
-            msg,
-          ]);
-        }
+        if (!exists) insertMessage(msg);
 
         if (msg.author === "you") {
           for (var t = 0; t < state.pendingTemp.length; t++) {
@@ -654,6 +768,7 @@
 
       case "status":
         state.activeView.status = payload.status;
+        if (payload.status !== "active") state.activeView.typing = null;
         renderStatus(state.activeView);
         refreshThreads()
           .then(renderThreadList)
@@ -661,6 +776,11 @@
         break;
 
       case "agent_error":
+        // Otherwise "X is thinking…" hangs there for a reply that never comes.
+        if (state.activeView.typing === payload.agent_id) {
+          state.activeView.typing = null;
+          renderTyping(null);
+        }
         toast(displayName(payload.agent_id) + " failed to respond.", "error");
         break;
 
@@ -680,17 +800,23 @@
   }
 
   document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "visible" && state.activeId) {
-      markRead();
-      renderThreadList();
-    }
+    if (document.visibilityState !== "visible") return;
+    if (state.activeId) markRead();
+    // A backgrounded tab may have missed a poll; catch the list up right away.
+    refreshThreads().then(renderThreadList).catch(renderThreadList);
   });
+
+  // Don't leave a stream half-open when the page goes away.
+  window.addEventListener("pagehide", closeStream);
 
   // -- persona drawer --
 
   async function openPersonaDrawer(agentId) {
     var p = personaFor(agentId);
     if (!p || !state.activeId) return;
+
+    var threadId = state.activeId;
+    state.drawerAgentId = agentId;
 
     els.drawerIdentity.innerHTML =
       avatarHtml(agentId, "avatar") +
@@ -716,14 +842,21 @@
     try {
       var data = await api(
         "/api/chat/threads/" +
-          encodeURIComponent(state.activeId) +
+          encodeURIComponent(threadId) +
           "/memories/" +
           encodeURIComponent(agentId),
       );
 
+      // Opening a second persona while this was in flight must win.
+      if (state.drawerAgentId !== agentId) return;
+
       var files = (data.memories && data.memories.files) || [];
       var opinions = files.filter(function (f) {
-        return f.path.indexOf("opinions/") === 0 && f.content.trim() !== "";
+        return (
+          f &&
+          String(f.path || "").indexOf("opinions/") === 0 &&
+          String(f.content || "").trim() !== ""
+        );
       });
 
       var html;
@@ -745,6 +878,7 @@
 
       setDrawerOpinions(html);
     } catch (_e) {
+      if (state.drawerAgentId !== agentId) return;
       setDrawerOpinions('<p class="opinion">Could not load memories.</p>');
     }
   }
@@ -767,8 +901,13 @@
   }
 
   function closeDrawer() {
+    state.drawerAgentId = null;
     els.personaDrawer.classList.add("hidden");
     els.drawerBackdrop.classList.add("hidden");
+  }
+
+  function drawerIsOpen() {
+    return !els.personaDrawer.classList.contains("hidden");
   }
 
   els.drawerClose.addEventListener("click", closeDrawer);
@@ -802,10 +941,42 @@
       .join("");
   }
 
+  function selectedRosterIds() {
+    return Array.prototype.map.call(
+      els.rosterList.querySelectorAll("input:checked"),
+      function (input) {
+        return input.value;
+      },
+    );
+  }
+
+  function syncRosterHint() {
+    var count = selectedRosterIds().length;
+    var hint = $("roster-count");
+    if (hint) {
+      hint.textContent =
+        count === 0
+          ? "(pick 1–" + MAX_MEMBERS + ")"
+          : "(" + count + " of " + MAX_MEMBERS + " picked)";
+    }
+  }
+
   els.rosterList.addEventListener("change", function (ev) {
     var item = ev.target.closest(".roster-item");
     if (!item) return;
+
+    // Hard-stop at the member ceiling instead of letting the server reject it.
+    if (ev.target.checked && selectedRosterIds().length > MAX_MEMBERS) {
+      ev.target.checked = false;
+      toast(
+        "Up to " + MAX_MEMBERS + " philosophers per conversation.",
+        "error",
+      );
+      return;
+    }
+
     item.classList.toggle("selected", ev.target.checked);
+    syncRosterHint();
   });
 
   function openModal() {
@@ -814,6 +985,7 @@
     els.rosterList.querySelectorAll(".roster-item").forEach(function (el) {
       el.classList.remove("selected");
     });
+    syncRosterHint();
     els.modalBackdrop.classList.remove("hidden");
     els.newThreadName.focus();
   }
@@ -821,6 +993,16 @@
   function closeModal() {
     els.modalBackdrop.classList.add("hidden");
   }
+
+  function modalIsOpen() {
+    return !els.modalBackdrop.classList.contains("hidden");
+  }
+
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape") return;
+    if (drawerIsOpen()) closeDrawer();
+    else if (modalIsOpen()) closeModal();
+  });
 
   els.newThreadBtn.addEventListener("click", openModal);
   els.modalClose.addEventListener("click", closeModal);
@@ -832,18 +1014,24 @@
     ev.preventDefault();
     els.newThreadError.classList.add("hidden");
 
-    var memberIds = Array.prototype.map.call(
-      els.rosterList.querySelectorAll("input:checked"),
-      function (input) {
-        return input.value;
-      },
-    );
+    var name = els.newThreadName.value.trim();
+    var memberIds = selectedRosterIds();
 
+    if (!name) return showModalError("Give the conversation a name.");
+    if (!memberIds.length) {
+      return showModalError("Pick at least one philosopher.");
+    }
+    if (memberIds.length > MAX_MEMBERS) {
+      return showModalError("Pick at most " + MAX_MEMBERS + " philosophers.");
+    }
+
+    var submitBtn = els.newThreadForm.querySelector("button[type=submit]");
+    submitBtn.disabled = true;
     try {
       var data = await api("/api/chat/threads", {
         method: "POST",
         body: {
-          name: els.newThreadName.value,
+          name: name,
           member_ids: memberIds,
           pace: els.newThreadPace.value,
         },
@@ -854,10 +1042,16 @@
       renderThreadList();
       openThread(data.thread_id);
     } catch (e) {
-      els.newThreadError.textContent = e.message;
-      els.newThreadError.classList.remove("hidden");
+      showModalError(e.message);
+    } finally {
+      submitBtn.disabled = false;
     }
   });
+
+  function showModalError(message) {
+    els.newThreadError.textContent = message;
+    els.newThreadError.classList.remove("hidden");
+  }
 
   // -- start --
 

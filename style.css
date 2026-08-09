@@ -114,11 +114,6 @@ select {
   font-weight: 650;
 }
 
-.sidebar-footer {
-  padding: 10px 12px;
-  border-top: 1px solid var(--border);
-}
-
 .thread-list {
   overflow-y: auto;
   flex: 1;
@@ -188,6 +183,15 @@ select {
 .thread-list-empty {
   color: var(--text-dim);
   padding: 24px 16px;
+  text-align: center;
+}
+.retry-btn {
+  margin-top: 10px;
+}
+
+.messages-loading {
+  color: var(--text-dim);
+  padding: 24px 4px;
   text-align: center;
 }
 
@@ -661,5 +665,22 @@ button.member-chip:hover {
   }
   .roster-list {
     grid-template-columns: 1fr;
+  }
+  /* iOS Safari zooms the page in on focus below 16px. */
+  .composer textarea,
+  .field input,
+  .field select {
+    font-size: 16px;
+  }
+  .composer {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .thread-header {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .messages {
+    padding: 12px 12px 4px;
   }
 }

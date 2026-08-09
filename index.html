@@ -40,7 +40,11 @@
             <button id="pause-btn" class="btn btn-ghost btn-small"></button>
           </header>
           <div id="messages" class="messages"></div>
-          <div id="typing-indicator" class="typing-indicator hidden"></div>
+          <div
+            id="typing-indicator"
+            class="typing-indicator hidden"
+            aria-live="polite"
+          ></div>
           <footer class="composer-wrap">
             <div id="paused-note" class="paused-note hidden">
               Paused — resume to keep talking.
@@ -49,12 +53,14 @@
               <textarea
                 id="composer-input"
                 rows="1"
+                aria-label="Message"
                 placeholder="Say something&hellip;"
               ></textarea>
               <button
                 type="submit"
                 class="btn btn-primary send-btn"
                 title="Send"
+                aria-label="Send"
               >
                 &#10148;
               </button>
